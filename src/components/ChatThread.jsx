@@ -1083,9 +1083,17 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
         {typing && <TypingIndicator />}
         <div ref={threadEndRef} />
       </div>
+      <div className="chat-footer">
+        © 2026 <a href="https://eevy.in" target="_blank" rel="noopener noreferrer">eevy.india</a> · hello@eevy.in
+      </div>
       <style>{`
         .chat-thread { display:flex; flex-direction:column; height:100%; }
         .chat-scroll { flex:1; overflow-y:auto; padding: 20px 16px 90px; display:flex; flex-direction:column; gap:14px; }
+        .chat-footer {
+          flex-shrink:0; text-align:center; padding:6px 0;
+          font-size:0.6875rem; color: var(--ink-4);
+        }
+        .chat-footer a { color: var(--ink-4); text-decoration:underline; }
       `}</style>
     </div>
   );
