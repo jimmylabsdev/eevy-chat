@@ -1,0 +1,64 @@
+:root {
+  /* Inherited 1:1 from index.html — same product, don't reinvent the brand */
+  --teal: #0D9488;
+  --orange: #F06A22;
+  --orange-light: rgba(240,106,34,0.14);
+  --orange-mid: rgba(240,106,34,0.42);
+  --orange-dark: #FFA36B;
+  --orange-glow: rgba(240,106,34,0.22);
+  --ink: #F5F4F2;
+  --ink-2: rgba(245,244,242,0.82);
+  --ink-3: rgba(245,244,242,0.60);
+  --ink-4: rgba(245,244,242,0.42);
+  --ink-5: rgba(245,244,242,0.26);
+  --rule: rgba(255,255,255,0.14);
+  --rule-soft: rgba(255,255,255,0.08);
+  --surface: linear-gradient(155deg, #232323 0%, #1B1B1B 100%);
+  --surface-alt: #262626;
+  --brand: var(--orange);
+  --bg: #121212;
+  --green: #34D399;
+  --green-light: rgba(52,211,153,0.14);
+  --blue: #60A5FA;
+  --blue-light: rgba(96,165,250,0.14);
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --shadow-card: 0 4px 14px rgba(0,0,0,.45), 0 1px 0 rgba(255,255,255,.04) inset;
+  --shadow-elevated: 0 10px 30px rgba(0,0,0,.55), 0 2px 10px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.06) inset;
+  --shadow-orange: 0 4px 22px rgba(240,106,34,0.32);
+  --tr: 0.22s cubic-bezier(0.4,0,0.2,1);
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* New — chat-specific, derived from the same palette, not invented fresh */
+  --bubble-bot-bg: var(--surface-alt);
+  --bubble-bot-border: var(--rule-soft);
+  --bubble-user-bg: linear-gradient(135deg, var(--orange), #D9581A);
+  --bubble-user-text: #FFFFFF;
+  --chip-bg: transparent;
+  --chip-border: var(--rule);
+  --chip-border-active: var(--teal);
+  --chip-text-active: var(--teal);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
