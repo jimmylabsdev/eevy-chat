@@ -179,6 +179,10 @@ const BUDGET_RANGES = {
 export function filterVehiclesByBudget(vehicles, budgetKey) {
   const range = BUDGET_RANGES[budgetKey] ?? { min: 0, max: Infinity };
   return vehicles
-    .filter((v) => v.price_min > range.min && v.price_min <= range.max)
+    // Overlap, not price_min-only: a vehicle counts for this band if any
+    // part of its price_min-price_max span falls inside it -- so a model
+    // priced ₹24.99-34.49L shows for both 15_25 and 25_40, and one priced
+    // entirely below/above the band (e.g. ₹41.5L+ for band 25_40) doesn't.
+    .filter((v) => v.price_min <= range.max && v.price_max > range.min)
     .sort((a, b) => a.price_min - b.price_min);
 }

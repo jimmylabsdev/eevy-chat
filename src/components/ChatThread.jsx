@@ -6,9 +6,10 @@ import { scoreShortlist } from '../modules/scoring.js';
 import { getQuestionPrompt, getBridgeCopy, REWARD_INTROS, getWelcomeMessage } from '../copy/variants.js';
 import ChipGroup from './ChipGroup.jsx';
 import LeadCaptureBubble from './LeadCaptureBubble.jsx';
-import { saveAssessment, saveLead, genSessionId, fetchVehicles, filterVehiclesByBudget } from '../api/worker.js';
+import { saveAssessment, saveLead, notify, genSessionId, fetchVehicles, filterVehiclesByBudget } from '../api/worker.js';
+import { buildGuideHtml } from '../modules/guideBuilder.js';
 import { getExShowroomLakh, computeOnRoadLakh, computeInsurancePremium, computeEmi } from '../modules/finance.js';
-import { computeReadiness, readinessLabel } from '../modules/readiness.js';
+import { computeReadiness, readinessLabel, deriveAssessmentFields } from '../modules/readiness.js';
 import { track } from '../modules/analytics.js';
 import eevyAvatar from '../assets/eevy-avatar.png';
 import { clearPersistedSession } from '../state/persistence.js';
@@ -45,6 +46,8 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
   const leadCapturedRef = useRef({ email: false });
   const pendingPostNameActionRef = useRef(null); // callback to run once name capture resolves
   const postEmailActionRef = useRef(null); // callback to run once email capture resolves (submit or skip)
+  const pendingEmailModuleRef = useRef(null); // which module the current email gate belongs to
+  const buyingKitDataRef = useRef(null); // cached buildBuyingKitData() output, reused for guide_html
   const shortlistRef = useRef([]); // vehicle ids ticked on the ev-budget multi-select screen
   // Set only when Loan/EMI or Insurance was entered without a confirmed car
   // and the person chose "Find my Top 3" or "Browse all EVs" to pick one.
@@ -275,13 +278,40 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
   // exactly like every other reward (skips if already captured this
   // session), then assemble and show the kit.
   function finishBuyingKitQuestions() {
-    afterReward('buying-kit', () => showBuyingKitReport());
+    saveAssessment(state.sessionId, answersRef.current).catch((e) => {
+      console.error('[eevy] buying kit flow-end save failed:', e);
+    });
+    buildBuyingKitData()
+      .then((data) => {
+        buyingKitDataRef.current = data;
+        // Final completion save -- sets completed_at + the derived/score
+        // fields, none of which were ever being sent before. Fires
+        // regardless of the email gate outcome below (skip or submit),
+        // since "reached the buying kit" is what completion means here,
+        // not "gave an email".
+        saveAssessment(state.sessionId, {
+          ...deriveAssessmentFields(answersRef.current),
+          readiness_score: data.readiness.score,
+        }, true).catch((e) => {
+          console.error('[eevy] buying kit completion save failed:', e);
+        });
+      })
+      .catch((e) => {
+        console.error('[eevy] buying kit assembly failed:', e);
+        track('buying_kit_error', { message: e.message });
+      })
+      .finally(() => {
+        const proceed = () => showBuyingKitReport();
+        if (!tryEmailCapture('buying-kit', proceed)) {
+          proceed();
+        }
+      });
   }
 
   async function showBuyingKitReport() {
     track('buying_kit_view');
     try {
-      const data = await buildBuyingKitData();
+      const data = buyingKitDataRef.current || await buildBuyingKitData();
       onShowBuyingKit({ ...data, onFinish: () => showWelcome(nameRef.current) });
     } catch (e) {
       console.error('[eevy] buying kit assembly failed:', e);
@@ -805,6 +835,7 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
     if (!deliverableModules.includes(moduleId)) return false;
     if (leadCapturedRef.current.email) return false;
     postEmailActionRef.current = next;
+    pendingEmailModuleRef.current = moduleId;
     track('lead_view', { field: 'email', module_id: moduleId });
     pushBotMessage('lead-email', { context: moduleId }, 500);
     return true;
@@ -973,6 +1004,15 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
     saveLead(state.sessionId, { name: nameRef.current, email, answers: answersRef.current }).catch((e) => {
       console.error('[eevy] saveLead failed:', e.message);
     });
+    if (pendingEmailModuleRef.current === 'buying-kit') {
+      const guideHtml = buyingKitDataRef.current
+        ? buildGuideHtml(buyingKitDataRef.current, { name: nameRef.current })
+        : null;
+      notify(state.sessionId, { name: nameRef.current, email, guideHtml }).catch((e) => {
+        console.error('[eevy] notify failed:', e.message);
+      });
+    }
+    pendingEmailModuleRef.current = null;
     const next = postEmailActionRef.current;
     postEmailActionRef.current = null;
     pushBotMessage('text', "Perfect, sent it your way.").then(() => {
@@ -987,6 +1027,7 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
     track('lead_skip', { field: 'email' });
     const next = postEmailActionRef.current;
     postEmailActionRef.current = null;
+    pendingEmailModuleRef.current = null;
     if (next) next(); else finishJourney();
   }
 
@@ -1006,6 +1047,8 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
     leadCapturedRef.current = { email: false };
     pendingPostNameActionRef.current = null;
     postEmailActionRef.current = null;
+    pendingEmailModuleRef.current = null;
+    buyingKitDataRef.current = null;
     shortlistRef.current = [];
     setActiveModuleId(null);
     setActiveQuestionIdx(0);
@@ -1210,7 +1253,7 @@ function MessageBubble({
               : message.payload.context === 'insurance'
                 ? 'Shall I email you these insurance options?'
                 : 'Where should I send this?';
-        return <LeadCaptureBubble field="email" prompt={prompt} disabled={interactionDisabled} onSubmit={onEmailSubmit} onSkip={onLeadSkip} />;
+        return <LeadCaptureBubble field="email" prompt={prompt} disabled={interactionDisabled} onSubmit={onEmailSubmit} />;
       }
       case 'return-to-menu-cta':
         return <ChipGroup

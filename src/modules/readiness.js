@@ -40,3 +40,27 @@ export function readinessLabel(score) {
   if (score >= 65) return 'Getting close';
   return 'Good start — a few things to sort';
 }
+
+/**
+ * society_approval / monthly_km / tenant_approval_needed — ported from
+ * index.html's derived(). Never wired up client-side before; assessment_v3
+ * had the columns but nothing was sending them.
+ */
+export function deriveAssessmentFields(answers) {
+  const a = answers;
+  const residence = a.residence || '';
+  const own_rent = a.own_rent || '';
+
+  const society_approval =
+    (residence === 'apartment' || residence === 'apartment_standalone') ? 'yes'
+    : residence === 'gated_villa' ? 'likely'
+    : (residence === 'independent' || residence === 'farmhouse') ? 'no'
+    : 'no';
+
+  const dailyMidpoints = { under_30: 20, '30_60': 45, '60_100': 80, above_100: 130 };
+  const monthly_km = (dailyMidpoints[a.daily_distance] || 50) * 26;
+
+  const tenant_approval_needed = (own_rent === 'rent' && society_approval !== 'no') ? 'yes' : 'no';
+
+  return { society_approval, monthly_km, tenant_approval_needed };
+}
