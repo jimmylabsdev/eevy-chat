@@ -1159,7 +1159,7 @@ function MessageBubble({
         .bubble-row-user { justify-content:flex-end; }
         .bubble-avatar { width:28px; height:28px; border-radius:50%; object-fit:cover; flex-shrink:0; margin-bottom:2px; }
         .bubble {
-          max-width: calc(82% - 36px); padding: 12px 16px; border-radius: var(--radius-md);
+          max-width: calc(90% - 36px); padding: 12px 16px; border-radius: var(--radius-md);
           font-size: 0.925rem; line-height:1.45;
         }
         .bubble-bot {

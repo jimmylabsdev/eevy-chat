@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import eevyAvatar from '../assets/eevy-avatar.avif';
+import eevyAvatar from '../assets/eevy-avatar.png';
 import { track } from '../modules/analytics.js';
 
 /**
@@ -37,6 +37,8 @@ export default function NameGateScreen({ onSubmit }) {
           <p>Before we start, what should I call you?</p>
         </div>
 
+        <p className="name-gate-social-proof">Trusted by 500+ EV buyers last month</p>
+
         <input
           type="text"
           inputMode="text"
@@ -61,17 +63,14 @@ export default function NameGateScreen({ onSubmit }) {
 
       <style>{`
         .name-gate {
-          min-height:100%;
-          display:flex;
-          flex-direction:column;
-          justify-content:flex-start;
-          padding:40px 0 calc(24px + env(safe-area-inset-bottom));
+          height:100%; display:flex; flex-direction:column; justify-content:center;
+          padding: 24px 0 calc(24px + env(safe-area-inset-bottom));
           overflow-y:auto;
         }
         .name-gate-stack { display:flex; flex-direction:column; align-items:stretch; gap:22px; }
 
         .name-gate-avatar {
-          height:250px; width:auto; align-self:center;
+          height:220px; width:auto; align-self:center;
           filter: drop-shadow(0 10px 30px rgba(96,165,250,0.25));
         }
 
@@ -94,6 +93,11 @@ export default function NameGateScreen({ onSubmit }) {
           padding:16px 18px; color: var(--ink); font-family: var(--font);
           font-size:1rem;
         }
+        .name-gate-social-proof {
+          margin:-6px 0 0; text-align:center; font-size:0.8125rem; font-weight:600;
+          color: var(--teal);
+        }
+
         .name-gate input::placeholder { color: var(--ink-4); }
         .name-gate input:focus { outline:none; border-color: var(--blue); }
 
