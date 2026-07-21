@@ -4,6 +4,7 @@ import { auth } from '../firebase.js';
 import PhoneOtpGate from './widgets/PhoneOtpGate.jsx';
 import EstimateCard from './widgets/EstimateCard.jsx';
 import { fetchMyJourneys, hideJourney, fetchVehicles, fetchVariants, fetchLoanPartners, fetchInsurancePartners } from '../api/worker.js';
+import { track } from '../modules/analytics.js';
 import eevyAvatar from '../assets/eevy-avatar.png';
 
 /**
@@ -48,6 +49,13 @@ export default function SavedJourneysDashboard({ onClose }) {
 
   const [selectedJourney, setSelectedJourney] = useState(null); // the journey object for the detail popup, or null
   const [confirmDeleteRef, setConfirmDeleteRef] = useState(null); // client_ref pending delete confirmation, or null
+
+  // GA4 (2026-07-21) — the dashboard had zero tracking anywhere until now,
+  // GA4 or DB. This one specifically closes the gap Ram flagged: proof
+  // this is actually being used, before investing further in it.
+  useEffect(() => {
+    track('dashboard_opened');
+  }, []);
 
   // Firebase restores its persisted session asynchronously — this is the
   // correct way to know when that's actually settled, rather than reading
@@ -94,7 +102,9 @@ export default function SavedJourneysDashboard({ onClose }) {
     if (!phone) return;
     setJourneys(null);
     fetchMyJourneys(phone).then((res) => {
-      setJourneys(res?.journeys || []);
+      const list = res?.journeys || [];
+      setJourneys(list);
+      track('dashboard_list_viewed', { count: list.length });
     }).catch((e) => {
       console.warn('[eevy] fetchMyJourneys failed:', e.message);
       setJourneys([]);
@@ -104,6 +114,7 @@ export default function SavedJourneysDashboard({ onClose }) {
   function handleLoginVerified(verifiedPhone) {
     setShowLoginGate(false);
     setPhone(verifiedPhone);
+    track('dashboard_login');
   }
 
   function handleDeleteConfirmed() {
@@ -113,6 +124,7 @@ export default function SavedJourneysDashboard({ onClose }) {
     hideJourney(ref).catch((e) => {
       console.warn('[eevy] hideJourney failed:', e.message);
     });
+    track('dashboard_item_deleted');
   }
 
   const referenceDataReady = vehiclesById && variantsById && loanPartnersByKey && insurancePartnersByKey;
@@ -139,7 +151,7 @@ export default function SavedJourneysDashboard({ onClose }) {
               journey={j}
               vehicle={vehiclesById[j.vehicle_id]}
               variant={variantsById[j.variant_id]}
-              onOpen={() => setSelectedJourney(j)}
+              onOpen={() => { track('dashboard_item_opened', { event_type: j.event_type }); setSelectedJourney(j); }}
               onDelete={() => setConfirmDeleteRef(j.client_ref)}
             />
           ))}

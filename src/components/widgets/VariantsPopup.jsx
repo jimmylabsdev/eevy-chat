@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchVariants, logJourneyEvent } from '../../api/worker.js';
+import { track } from '../../modules/analytics.js';
 
 /**
  * Shared "Check Variants" popup — extracted from ResultsView.jsx
@@ -52,6 +53,7 @@ export default function VariantsPopup({ vehicleItem, onBack, onCalculateEmi, onC
             variant_id: mine[0].id,
             ex_showroom_price_lakh: mine[0].ex_showroom_price_lakh ?? null,
           });
+          track('variant_reached', { flow: flowName, vehicle_id: vehicleItem.id, variant_id: mine[0].id });
         }
       })
       .catch((e) => { if (!cancelled) setLoadError(e.message); });

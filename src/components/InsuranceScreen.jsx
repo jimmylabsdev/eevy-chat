@@ -4,6 +4,7 @@ import PartnerTiles from './widgets/PartnerTiles.jsx';
 import ConfirmContinueGate from './widgets/ConfirmContinueGate.jsx';
 import SavePhoneGate from './widgets/SavePhoneGate.jsx';
 import { logJourneyEvent } from '../api/worker.js';
+import { track } from '../modules/analytics.js';
 
 /**
  * onRoad/idv/premium/gst/total/ncb/coverageLabel: pre-computed breakdown
@@ -68,6 +69,10 @@ export default function InsuranceScreen({
         } else {
           setJourneyLogStatus('failed');
         }
+      });
+      track('insurance_calculated', {
+        flow: flowName, vehicle_id: vehicleId, variant_id: variantId,
+        partner_key: selectedInsurancePartner, premium_amount: total,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

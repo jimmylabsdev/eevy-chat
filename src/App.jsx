@@ -161,7 +161,7 @@ function AppInner() {
           <img className="app-avatar" src={eevyAvatar} alt="Eevy" />
           <span className="app-logo">Chat with Eevy</span>
           <button className="app-menu-btn" onClick={() => setScreen('dashboard')} aria-label="My Saved Journeys">
-            ☰
+            👤
           </button>
         </header>
       )}

@@ -5,6 +5,7 @@ import PartnerTiles from './widgets/PartnerTiles.jsx';
 import ConfirmContinueGate from './widgets/ConfirmContinueGate.jsx';
 import SavePhoneGate from './widgets/SavePhoneGate.jsx';
 import { logJourneyEvent } from '../api/worker.js';
+import { track } from '../modules/analytics.js';
 
 /**
  * variant: 'cash' | 'full' | 'incomeOnly' — same three payment_mode paths
@@ -77,6 +78,10 @@ export default function AffordabilityScreen({ variant, onRoadLakh, exShowroom, o
         } else {
           setJourneyLogStatus('failed');
         }
+      });
+      track('emi_calculated', {
+        flow: flowName, vehicle_id: vehicleId, variant_id: variantId,
+        partner_key: selectedLoanPartner, emi_amount: sliderResult.emi,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
