@@ -12,7 +12,7 @@ import ShareButton from './widgets/ShareButton.jsx';
  * All figures are pre-computed by ChatThread.jsx (buildBuyingKitData) from
  * this app's own real answers/finance/insurance modules — this component
  * only renders what it's handed.
- */
+  */ 
 export default function BuyingKitScreen({ data, onContinue }) {
   return (
     <div className="kit-screen">
