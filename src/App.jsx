@@ -244,7 +244,7 @@ function AppInner() {
       )}
 
       <style>{`
-        .app-shell { height:100dvh; display:flex; flex-direction:column; max-width:560px; margin:0 auto; position:relative; }
+        .app-shell { height:100dvh; display:flex; flex-direction:column; max-width:560px; margin:0 auto; position:relative; transform: translateZ(0); }
         .app-header {
           padding: 12px 20px; border-bottom:1px solid var(--rule-soft);
           background: rgba(18,18,18,0.8); backdrop-filter: blur(10px);
@@ -260,7 +260,7 @@ function AppInner() {
         .app-main { flex:1; overflow:hidden; padding: 0 20px; }
         .app-overlay {
           position:absolute; inset:0; top:65px; /* below header */
-          background: var(--bg); z-index:1; overflow-y:auto;
+          background: var(--bg); z-index:5; overflow-y:auto;
           padding: 0 20px; box-sizing:border-box;
         }
         @media (max-width: 600px) { .app-main, .app-overlay { padding: 0 12px; } }
