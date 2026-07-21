@@ -17,20 +17,31 @@ const INCOME_HINT = 'Helps us gauge loan eligibility (not stored separately)';
  *       same defaults as the old showAffordabilityIncome() screen: down
  *       payment ~20%, tenure 5yr, rate 8.5%).
  * onRoadLakh: pre-computed on-road price this screen estimates against.
+ * initialRatePct/maxTenureYears: NEW, optional (2026-07-19) — set when the
+ * person picked a specific lender on the new lender-selection page. Rate
+ * becomes the lender's own min_interest_rate as the starting point (still
+ * draggable); tenure's slider max is capped to the lender's max_tenure.
+ * Both fall back to the original fixed defaults (8.5%, 2–7yr) when absent,
+ * i.e. every entry point that doesn't go through lender selection is
+ * unaffected.
  */
-export default function AffordabilitySliders({ mode, onRoadLakh, onDone, disabled }) {
+export default function AffordabilitySliders({ mode, onRoadLakh, onDone, disabled, initialRatePct, maxTenureYears }) {
   const defaultDp = Math.round(onRoadLakh * 0.2 * 10) / 10;
   const maxDp = Math.min(Math.round(onRoadLakh * 0.5 * 10) / 10, 20);
 
+  const tenureMax = Math.max(2, maxTenureYears || 7);
+  const rateMin = Math.min(8, initialRatePct ?? 8);
+  const rateMax = Math.max(13, initialRatePct ?? 13);
+
   const [downPayment, setDownPayment] = useState(defaultDp);
-  const [tenureYears, setTenureYears] = useState(DEFAULT_TENURE_YEARS);
-  const [ratePct, setRatePct] = useState(DEFAULT_RATE_PCT);
+  const [tenureYears, setTenureYears] = useState(Math.min(DEFAULT_TENURE_YEARS, tenureMax));
+  const [ratePct, setRatePct] = useState(initialRatePct ?? DEFAULT_RATE_PCT);
   const [incomeIdx, setIncomeIdx] = useState(DEFAULT_INCOME_IDX);
 
   const isFull = mode === 'full';
   const effectiveDp = isFull ? downPayment : defaultDp;
   const effectiveTenure = isFull ? tenureYears : DEFAULT_TENURE_YEARS;
-  const effectiveRate = isFull ? ratePct : DEFAULT_RATE_PCT;
+  const effectiveRate = isFull ? ratePct : (initialRatePct ?? DEFAULT_RATE_PCT);
 
   const emi = useMemo(
     () => computeEmi({ onRoadLakh, downPaymentLakh: effectiveDp, tenureYears: effectiveTenure, ratePct: effectiveRate }),
@@ -51,7 +62,7 @@ export default function AffordabilitySliders({ mode, onRoadLakh, onDone, disable
     <div className="affordability-single">
       {isFull ? (
         <div className="insight-card">
-          <p>Estimated on-road price: <strong>₹{onRoadLakh.toFixed(1)} lakh</strong> &nbsp;·&nbsp; Rate assumed at ~8.5% p.a.</p>
+          <p>Estimated on-road price: <strong>₹{onRoadLakh.toFixed(1)} lakh</strong> &nbsp;·&nbsp; Rate assumed at ~{effectiveRate.toFixed(1)}% p.a.</p>
         </div>
       ) : (
         <div className="insight-card">
@@ -66,11 +77,11 @@ export default function AffordabilitySliders({ mode, onRoadLakh, onDone, disable
               disabled={disabled} onChange={(e) => setDownPayment(Number(e.target.value))} />
           </SliderRow>
           <SliderRow label="Loan tenure" value={`${tenureYears} years`} hint={TENURE_HINT}>
-            <input type="range" min={2} max={7} step={1} value={tenureYears}
+            <input type="range" min={2} max={tenureMax} step={1} value={tenureYears}
               disabled={disabled} onChange={(e) => setTenureYears(Number(e.target.value))} />
           </SliderRow>
           <SliderRow label="Interest rate" value={`${ratePct.toFixed(1)}%`} hint={RATE_HINT}>
-            <input type="range" min={8} max={13} step={0.5} value={ratePct}
+            <input type="range" min={rateMin} max={rateMax} step={0.5} value={ratePct}
               disabled={disabled} onChange={(e) => setRatePct(Number(e.target.value))} />
           </SliderRow>
         </>

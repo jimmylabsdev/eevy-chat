@@ -6,7 +6,7 @@ import { scoreShortlist } from '../modules/scoring.js';
 import { getQuestionPrompt, getBridgeCopy, REWARD_INTROS, getWelcomeMessage } from '../copy/variants.js';
 import ChipGroup from './ChipGroup.jsx';
 import LeadCaptureBubble from './LeadCaptureBubble.jsx';
-import { saveAssessment, saveLead, notify, genSessionId, fetchVehicles, filterVehiclesByBudget } from '../api/worker.js';
+import { saveAssessment, saveLead, notify, genSessionId, fetchVehicles, filterVehiclesByBudget, confirmJourneySave } from '../api/worker.js';
 import { buildGuideHtml } from '../modules/guideBuilder.js';
 import { getExShowroomLakh, computeOnRoadLakh, computeInsurancePremium, computeEmi } from '../modules/finance.js';
 import { computeReadiness, readinessLabel, deriveAssessmentFields } from '../modules/readiness.js';
@@ -26,7 +26,7 @@ const RESULTS_TITLES = {
   'ev-personalize': 'Your top 3 matches',
 };
 
-export default function ChatThread({ onShowResults, onShowDetail, onShowFinance, onShowBuyingKit }) {
+export default function ChatThread({ onShowResults, onShowDetail, onShowFinance, onShowBuyingKit, refreshTrigger }) {
   const { state, dispatch } = useStore();
   const [activeModuleId, setActiveModuleId] = useState(null);
   const [activeQuestionIdx, setActiveQuestionIdx] = useState(0);
@@ -43,6 +43,7 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
   const answersRef = useRef({});
   const completedModulesRef = useRef(new Set());
   const nameRef = useRef(null);
+  const [savedPhone, setSavedPhone] = useState(null); // whatever phone number was typed into Save the first time this session (2026-07-19, replaces Firebase-verified phone) — lets a later Save on the OTHER calculator reuse it without asking again. Not verified — see SavePhoneGate.jsx for why that trade was made deliberately.
   const leadCapturedRef = useRef({ email: false });
   const pendingPostNameActionRef = useRef(null); // callback to run once name capture resolves
   const postEmailActionRef = useRef(null); // callback to run once email capture resolves (submit or skip)
@@ -102,23 +103,35 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
     nameRef.current = state.name;
     leadCapturedRef.current = { ...state.leadCaptured };
 
-    if (state.messages.length > 0) {
-      // Resuming — reconstruct exactly where the user left off from the
-      // last message rather than persisting position separately, since the
-      // message itself already encodes it.
-      const last = state.messages[state.messages.length - 1];
-      if (last.kind === 'question') {
-        const mod = MODULES[last.payload.moduleId];
-        const qIdx = mod ? mod.questions.findIndex((q) => q.id === last.payload.question.id) : 0;
-        setActiveModuleId(last.payload.moduleId);
-        setActiveQuestionIdx(qIdx >= 0 ? qIdx : 0);
-      }
-      return; // don't show the welcome message again
-    }
-
+    // Always land on a fresh main menu on load/refresh (2026-07-19 fix) —
+    // previously this tried to reconstruct exactly where the user left off
+    // from the last persisted message (re-deriving activeModuleId/
+    // activeQuestionIdx if it was a question). That was fragile: App.jsx's
+    // screen/resultsPayload/detailItem/financePayload are plain useState,
+    // never persisted, so a refresh always resets to screen='chat' — but
+    // the chat log itself would still show whatever was on-screen right
+    // before the reload (e.g. "here are your matches" with no matching
+    // overlay to back it, or a dangling question bubble with no active
+    // handler). Always re-showing the welcome message + menu chips avoids
+    // that mismatch entirely. Existing message history isn't cleared —
+    // this appends, so scrolling up still shows what they did before —
+    // and answers/name/completedModules underneath are untouched, so
+    // continuing from the fresh menu doesn't lose prior progress.
     showWelcome(state.name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Returning from a screen that lives outside ChatThread's own flow
+  // (currently just the "My Saved Journeys" dashboard, opened via the
+  // hamburger menu) should show a fresh main menu, same reasoning as the
+  // bootstrap effect above — App.jsx increments refreshTrigger on close,
+  // and this reacts to it. Guarded on > 0 so this doesn't ALSO fire on
+  // initial mount (refreshTrigger starts at 0, same value the whole time
+  // until App.jsx first increments it).
+  useEffect(() => {
+    if (refreshTrigger > 0) showWelcome(nameRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTrigger]);
 
   function askQuestion(moduleId, qIdx) {
     const mod = MODULES[moduleId];
@@ -212,17 +225,54 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
       enterBrowseFlow();
     } else if (intent.id === 'buying_kit') {
       handleBuyingKitIntent();
+    } else if (intent.id === 'calculate_emi') {
+      enterLenderBrowse();
+    } else if (intent.id === 'suggest_insurance') {
+      enterInsurerBrowse();
     } else {
       enterModule(intent.startModule);
     }
   }
 
+  /**
+   * Main-menu "EV Loan Providers" / "EV Insurance Providers" chips
+   * (2026-07-19) — pure directory browsing, no vehicle involved at all:
+   * straight to the grid-tile partner screen, tap a tile to see full
+   * details, close to return to the main menu. Deliberately does NOT go
+   * through enterModule('affordability'/'insurance') — that path (car
+   * selection, questions, calculator) stays exactly as-is for Buying Kit
+   * and the EMI/Insurance-flow's own car-selection-gate detour.
+   */
+  async function enterLenderBrowse() {
+    track('lender_browse_open');
+    await pushBotMessage('text', "Here's who's currently offering EV loans.");
+    onShowFinance({
+      kind: 'partner-browse',
+      partnerType: 'loan',
+      onFinish: () => showWelcome(nameRef.current),
+    });
+  }
+
+  async function enterInsurerBrowse() {
+    track('insurer_browse_open');
+    await pushBotMessage('text', "Here's who's currently offering EV insurance.");
+    onShowFinance({
+      kind: 'partner-browse',
+      partnerType: 'insurance',
+      onFinish: () => showWelcome(nameRef.current),
+    });
+  }
+
   // ---- Buying Kit orchestration ----
-  // Requires ev-personalize (Top 3), affordability (Loan/EMI), and insurance
-  // to all be complete first; if any are missing, offers to run through them
-  // (in that fixed order), then always asks charging + showroom (whichever
-  // aren't already done — they never got their own reward screen elsewhere,
-  // this is the only place they're reachable), then assembles the kit.
+  // RETIRED (2026-07-19, per Ram: "lost in evolution, retire it") — no
+  // main-menu chip calls handleBuyingKitIntent() anymore (removed in the
+  // 4-chip reshuffle). Left in place rather than deleted — flagged for a
+  // dedicated cleanup pass. Requires ev-personalize (Top 3), affordability
+  // (Loan/EMI), and insurance to all be complete first; if any are
+  // missing, offers to run through them (in that fixed order), then always
+  // asks charging + showroom (whichever aren't already done — they never
+  // got their own reward screen elsewhere, this is the only place they're
+  // reachable), then assembles the kit.
 
   function handleBuyingKitIntent() {
     const missingCore = BUYING_KIT_CORE.filter((id) => !isModuleComplete(id, answersRef.current));
@@ -568,8 +618,12 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
         emptyReason = `error: ${e.message}`;
       }
 
+      const budgetLabel = optLabel(mod, 'budget', answersRef.current.budget);
       onShowResults({
-        title: RESULTS_TITLES['ev-budget-list'],
+        title: `Price range - ${budgetLabel}`,
+        subtitle: items.length > 0
+          ? `We found ${items.length} EV${items.length === 1 ? '' : 's'} in that range. Select an EV to learn more.`
+          : undefined,
         items,
         emptyReason,
         moduleId,
@@ -581,13 +635,15 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
           track('module_continue', { module_id: moduleId });
           afterReward('ev-budget-list', () => showWelcome(nameRef.current));
         },
-        // Replaces Share on this one screen only — budget/city are already
-        // answered (same field names as ev-personalize's own prerequisite),
-        // so this drops straight into usage/priority/etc, no re-asking.
-        onFindTop3: () => {
-          track('find_top3_from_budget_list');
-          pushUserMessage('Find my Top 3');
-          enterModule('ev-personalize');
+        // From the variants popup's footer — the vehicle is already known
+        // (whichever card's popup this was), so set selected_vehicle_id
+        // first: enterModule's car-selection gate sees it's already
+        // satisfied and skips straight into the calculator, no detour.
+        onCalculateEmi: (item, variant) => {
+          enterAffordabilityFromVariant(item, variant);
+        },
+        onCheckInsurance: (item, variant) => {
+          enterInsuranceFromVariant(item, variant);
         },
       });
       return;
@@ -613,7 +669,6 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
         emptyReason,
         moduleId,
         selectionMode: 'single', // top match pre-selected by ResultsView itself
-        onWhatsAppInterest: (phone, item) => handleWhatsAppInterest('whatsapp_ev_interest', phone, item),
         onContinue: (selectedItem) => {
           track('module_continue', { module_id: moduleId });
           if (selectedItem) {
@@ -699,10 +754,10 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
    *  - loan: full down-payment/tenure/rate/income sliders + live EMI.
    *  - not_sure: income-only slider, same 20%/5yr/8.5% defaults as before.
    */
-  async function deliverAffordabilityReward() {
+  async function deliverAffordabilityReward(variantPriceOverride, returnTo, variantId) {
     await pushBotMessage('text', REWARD_INTROS.affordability);
     const vehicle = await resolvePricingVehicle();
-    const exShowroom = getExShowroomLakh(vehicle, answersRef.current.budget);
+    const exShowroom = variantPriceOverride != null ? variantPriceOverride : getExShowroomLakh(vehicle, answersRef.current.budget);
     const onRoad = computeOnRoadLakh(exShowroom);
     const pm = answersRef.current.payment_mode;
     const variant = pm === 'full_cash' ? 'cash' : pm === 'loan' ? 'full' : 'incomeOnly';
@@ -710,9 +765,54 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
     onShowFinance({
       kind: 'affordability',
       variant, onRoadLakh: onRoad, exShowroom,
-      onWhatsAppInterest: (phone, partner) => handleWhatsAppInterest('whatsapp_loan_interest', phone, partner),
+      returnTo, // e.g. 'results' — where handleFinanceFinish navigates on completion/X. Undefined -> App.jsx's existing 'chat' default, unchanged for every other entry point.
+      // Journey-log context (2026-07-19) — flowName derived from returnTo
+      // since that already uniquely distinguishes Budget vs Browse;
+      // vehicleId read from answersRef (set by either entry path before
+      // this is called) rather than threaded as its own param.
+      sessionId: state.sessionId,
+      flowName: returnTo === 'results' ? 'budget' : returnTo === 'detail' ? 'browse' : null,
+      vehicleId: answersRef.current.selected_vehicle_id || null,
+      variantId: variantId || null,
       onFinish: (result) => handleAffordabilityDone(result),
+      // Cross-link (2026-07-19) — "Check Insurance" on the breakdown
+      // stage. Reuses enterInsuranceFromVariant() with a minimal
+      // reconstructed item/variant (brand+model from the vehicle already
+      // resolved above, price/id already known here) — no new plumbing
+      // needed from whichever entry point got us here. Hidden entirely if
+      // the vehicle couldn't be resolved.
+      onCheckInsurance: vehicle ? () => {
+        enterInsuranceFromVariant(
+          { id: vehicle.id, title: `${vehicle.brand} ${vehicle.model}` },
+          { id: variantId, ex_showroom_price_lakh: exShowroom },
+          returnTo,
+        );
+      } : undefined,
+      onPhoneSaved: (phone, journeyRowId) => handlePhoneSaved('affordability', phone, journeyRowId),
+      knownPhone: savedPhone,
     });
+  }
+
+  /**
+   * Direct entry from a variants popup's "Calculate EMI" button — used by
+   * both the Budget result screen (returnTo: 'results', the default) and
+   * now Browse (returnTo: 'detail', 2026-07-19). Skips the payment_mode
+   * question entirely (financing is already implied) and prices against
+   * the specific variant tapped, not the vehicle's lowest-variant
+   * price_min. Every other entry point into affordability (main menu chip,
+   * car-selection gate, etc.) is untouched and still goes through
+   * startModule('affordability') asking payment_mode as before.
+   */
+  function enterAffordabilityFromVariant(item, variant, returnTo = 'results') {
+    track('calculate_emi_from_variants', { vehicle_id: item.id, variant_id: variant?.id });
+    answersRef.current = { ...answersRef.current, selected_vehicle_id: item.id, payment_mode: 'loan' };
+    dispatch({ type: 'ANSWER', questionId: 'selected_vehicle_id', value: item.id });
+    dispatch({ type: 'ANSWER', questionId: 'payment_mode', value: 'loan' });
+    saveAssessment(state.sessionId, { selected_vehicle_id: item.id, payment_mode: 'loan' }).catch((e) => {
+      console.error('[eevy] selected_vehicle_id/payment_mode save failed (variants EMI):', e);
+    });
+    pushUserMessage(`Calculate EMI for ${item.title}`);
+    deliverAffordabilityReward(variant?.ex_showroom_price_lakh, returnTo, variant?.id);
   }
 
   function handleAffordabilityDone(result) {
@@ -752,10 +852,10 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
    * (InsuranceScreen.jsx). Replaces the old v1 stub with a real premium
    * breakdown and live insurance partner tiles.
    */
-  async function deliverInsuranceReward() {
+  async function deliverInsuranceReward(variantPriceOverride, returnTo, variantId) {
     await pushBotMessage('text', REWARD_INTROS.insurance);
     const vehicle = await resolvePricingVehicle();
-    const exShowroom = getExShowroomLakh(vehicle, answersRef.current.budget);
+    const exShowroom = variantPriceOverride != null ? variantPriceOverride : getExShowroomLakh(vehicle, answersRef.current.budget);
     const onRoad = computeOnRoadLakh(exShowroom);
     const breakdown = computeInsurancePremium({
       onRoadLakh: onRoad,
@@ -765,10 +865,118 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
 
     onShowFinance({
       kind: 'insurance',
-      onRoad, ...breakdown,
-      onWhatsAppInterest: (phone, partner) => handleWhatsAppInterest('whatsapp_insurance_interest', phone, partner),
+      onRoad, exShowroom, ...breakdown,
+      returnTo, // e.g. 'results' for the variants-triggered entry — same mechanism as affordability's returnTo.
+      sessionId: state.sessionId,
+      flowName: returnTo === 'results' ? 'budget' : returnTo === 'detail' ? 'browse' : null,
+      vehicleId: answersRef.current.selected_vehicle_id || null,
+      variantId: variantId || null,
+      insurancePreference: answersRef.current.insurance_preference || null,
       onFinish: (result) => handleInsuranceDone(result),
+      // Cross-link (2026-07-19) — "Calculate EMI" on the estimate stage,
+      // mirroring deliverAffordabilityReward's onCheckInsurance above.
+      onCalculateEmi: vehicle ? () => {
+        enterAffordabilityFromVariant(
+          { id: vehicle.id, title: `${vehicle.brand} ${vehicle.model}` },
+          { id: variantId, ex_showroom_price_lakh: exShowroom },
+          returnTo,
+        );
+      } : undefined,
+      onPhoneSaved: (phone, journeyRowId) => handlePhoneSaved('insurance', phone, journeyRowId),
+      knownPhone: savedPhone,
     });
+  }
+
+  /**
+   * Direct entry from a variants popup's "Check Insurance" button — used by
+   * both the Budget result screen (returnTo: 'results', the default) and
+   * now Browse (returnTo: 'detail', 2026-07-19). Mirrors
+   * enterAffordabilityFromVariant(). Skips first_car/insurance_preference
+   * entirely: first_car isn't actually read by computeInsurancePremium()
+   * (saved for data purposes only, so leaving it unset here is honest, not
+   * a fabricated answer); insurance_preference defaults to 'not_sure' (a
+   * real, neutral, already-existing option — this avoids skewing toward
+   * zero-dep's ~17% premium bump one way or the other). existing_ncb keeps
+   * its usual 'not_provided' auto-fill. Prices against the specific
+   * variant tapped, not the vehicle's price_min.
+   */
+  function enterInsuranceFromVariant(item, variant, returnTo = 'results') {
+    track('check_insurance_from_variants', { vehicle_id: item.id, variant_id: variant?.id });
+    answersRef.current = {
+      ...answersRef.current,
+      selected_vehicle_id: item.id,
+      existing_ncb: 'not_provided',
+      insurance_preference: 'not_sure',
+    };
+    dispatch({ type: 'ANSWER', questionId: 'selected_vehicle_id', value: item.id });
+    dispatch({ type: 'ANSWER', questionId: 'existing_ncb', value: 'not_provided' });
+    dispatch({ type: 'ANSWER', questionId: 'insurance_preference', value: 'not_sure' });
+    saveAssessment(state.sessionId, {
+      selected_vehicle_id: item.id,
+      existing_ncb: 'not_provided',
+      insurance_preference: 'not_sure',
+    }).catch((e) => {
+      console.error('[eevy] selected_vehicle_id/insurance defaults save failed (variants insurance):', e);
+    });
+    pushUserMessage(`Check insurance for ${item.title}`);
+    deliverInsuranceReward(variant?.ex_showroom_price_lakh, returnTo, variant?.id);
+  }
+
+  /**
+   * Post-Save write (2026-07-19, renamed from handleSaveVerified — no more
+   * Firebase/OTP involved, per Ram's call: verification belongs at the
+   * future dashboard LOGIN, not on Save itself). Called by
+   * AffordabilityScreen/InsuranceScreen's onPhoneSaved once a phone number
+   * is captured — either freshly typed into SavePhoneGate, or reused
+   * automatically from savedPhone if this isn't the first Save this
+   * session.
+   *  - confirmJourneySave: ALWAYS runs — flips is_saved/saved_phone on the
+   *    specific emi_calculated/insurance_calculated row (by the ref that
+   *    row's own logJourneyEvent() call returned) — every new calculation
+   *    is its own row needing its own confirmation, whether or not the
+   *    phone was already known. Skipped gracefully if that ref never came
+   *    back (e.g. the journey-log insert itself failed).
+   *  - saveLead: ONLY on the FIRST Save this session (checked via
+   *    savedPhone being empty beforehand) — re-calling /api/lead with the
+   *    identical phone on every later Save added nothing and just burned
+   *    rate-limit budget for free.
+   * Then a plain acknowledgment message into the chat log.
+   */
+  function handlePhoneSaved(kind, phone, journeyRowId) {
+    track('save_verified', { kind });
+    const isFirstSave = !savedPhone;
+    setSavedPhone(phone);
+
+    if (journeyRowId) {
+      confirmJourneySave(journeyRowId, phone).then((res) => {
+        if (res?.matchedCount === 1) {
+          console.log('[eevy] confirmJourneySave: row updated correctly.');
+        } else if (res?.matchedCount === 0) {
+          console.warn('[eevy] confirmJourneySave: request succeeded but matched ZERO rows — the ref sent doesn\'t match any client_ref in the table. Check whether client_ref is actually populated on the row this session logged.');
+        } else {
+          console.warn('[eevy] confirmJourneySave: unexpected response, no matchedCount present:', res);
+        }
+      }).catch((e) => {
+        console.warn('[eevy] confirmJourneySave failed:', e.message);
+      });
+    } else {
+      // If this ever fires: the emi_calculated/insurance_calculated
+      // journey row's ref never made it back to the screen before Save
+      // was clicked (either that insert failed silently — check for a
+      // separate "[eevy] journey event log failed" warning around when
+      // the breakdown/estimate first rendered — or it simply hadn't
+      // resolved yet). Either way, is_saved/saved_phone can't be updated
+      // for a row we never got an id for.
+      console.warn('[eevy] confirmJourneySave skipped — no journey row ref was available at Save time.');
+    }
+
+    if (isFirstSave) {
+      saveLead(state.sessionId, { name: nameRef.current, phone }).catch((e) => {
+        console.error('[eevy] saveLead (post-save) failed:', e.message);
+      });
+    }
+
+    pushBotMessage('text', "We've saved your quote — we'll keep it linked to your number.");
   }
 
   function handleInsuranceDone(result) {
@@ -780,20 +988,6 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
       return;
     }
     afterReward('insurance', () => showWelcome(nameRef.current));
-  }
-
-  // WhatsApp interest — captured silently alongside an EV/lender/insurer
-  // selection (never blocks it). field is one of whatsapp_ev_interest /
-  // whatsapp_loan_interest / whatsapp_insurance_interest — new nullable
-  // columns on assessment_v3, allowlisted server-side (Ram confirmed,
-  // rides on the already-working /api/v3/save rather than a new endpoint).
-  function handleWhatsAppInterest(field, phone, contextItem) {
-    const contextLabel = contextItem?.title || contextItem?.bank_name || contextItem?.company_name || null;
-    track('whatsapp_interest_submit', { field, context: contextLabel || undefined });
-    answersRef.current = { ...answersRef.current, [field]: phone };
-    saveAssessment(state.sessionId, { [field]: phone }).catch((e) => {
-      console.warn(`[eevy] ${field} save failed (allowlist this field server-side if not done yet):`, e.message);
-    });
   }
 
   function handlePartnerSelect(type, key) {
@@ -853,6 +1047,15 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
   }
 
   // ---- Car-selection gate (Loan/EMI and Insurance both need a priced car) ----
+  // RETIRED (2026-07-19, per Ram: "lost in evolution, retire it") — this
+  // whole section (ensureVehicleSelected/handleCarSelectionChoice/
+  // doQuickPick, and the 'top3' branch's ev-personalize dependency) is only
+  // ever invoked via enterModule('affordability'/'insurance'), which
+  // nothing in the live menu calls anymore (Loan/Insurance chips go
+  // straight to PartnerBrowseScreen; Buying Kit, the other caller, has no
+  // menu entry either). Left in place rather than deleted — a full removal
+  // needs a proper dependency trace, flagged for a dedicated cleanup pass.
+  //
   // No forced redirect through find-a-car and back — instead, a genuine
   // choice: quick-pick a brand+model, run the Top 3 flow, or browse. Whichever
   // path they pick, the moment a car is confirmed it drops straight back
@@ -932,9 +1135,27 @@ export default function ChatThread({ onShowResults, onShowDetail, onShowFinance,
   function handleBrowseModelSelect(item) {
     pushUserMessage(item.title);
     track('detail_view', { vehicle_id: item.id });
+    if (pendingCarSelectionRef.current) {
+      // Detour from the EMI/Insurance car-selection gate — untouched,
+      // exactly as before. "Select this one" still completes the
+      // originally-pending request via finishBrowseSelection().
+      onShowDetail(item, {
+        onSelect: (selected) => finishBrowseSelection(selected),
+      });
+      return;
+    }
+    // Pure "Browse all EVs" from the main menu (2026-07-19) — no more
+    // "Select this one"; landing on a model now offers Check Variants,
+    // leading into the same Variants popup / EMI / Insurance flow the
+    // Budget result screen already uses. Deliberately does NOT touch the
+    // pendingCarSelectionRef detour case above. onClose (2026-07-19 fix)
+    // makes the X button show a fresh main menu — same showWelcome() the
+    // page-refresh fix uses — instead of silently revealing whatever was
+    // already in the chat log.
     onShowDetail(item, {
-      onSelect: (selected) => finishBrowseSelection(selected),
-      onWhatsAppInterest: (phone, selected) => handleWhatsAppInterest('whatsapp_ev_interest', phone, selected),
+      onClose: () => showWelcome(nameRef.current),
+      onCalculateEmi: (vehicle, variant) => enterAffordabilityFromVariant(vehicle, variant, 'detail'),
+      onCheckInsurance: (vehicle, variant) => enterInsuranceFromVariant(vehicle, variant, 'detail'),
     });
   }
 

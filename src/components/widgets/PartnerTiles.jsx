@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { fetchLoanPartners, fetchInsurancePartners, isWithinWindow, isFeaturedNow } from '../../api/worker.js';
+import { fetchLoanPartners, fetchInsurancePartners, isWithinWindow, isFeaturedNow, logPartnerClick } from '../../api/worker.js';
 import { track } from '../../modules/analytics.js';
-import WhatsAppInterestPopup from './WhatsAppInterestPopup.jsx';
 
 /**
  * Verbatim visual port of index.html's .bank-tile row (reused for both
@@ -10,14 +9,25 @@ import WhatsAppInterestPopup from './WhatsAppInterestPopup.jsx';
  * as the original.
  *
  * type: 'loan' | 'insurance'
+ * layout: 'strip' (default, unchanged) | 'grid' — 2-column full-page grid,
+ *   added 2026-07-19 for the new dedicated lender-selection page in the
+ *   Loan/EMI flow. Same tap-opens-detail-popup-then-Select interaction as
+ *   strip mode — only the outer tile arrangement/size differs. Grid tiles
+ *   show logo, min_interest_rate, and max_tenure stacked (loan only);
+ *   strip tiles are unchanged. (2026-07-19: the WhatsApp-interest gate
+ *   that used to sit between "Select" and actually selecting has been
+ *   removed from both modes — Select now resolves immediately.)
  * onSelect(partnerKey): called when the person selects a partner (bank_name
- * or company_name) — caller is responsible for persisting it.
+ * or company_name) — caller is responsible for persisting it. Unchanged.
+ * onSelectPartner(partner): NEW, additive, optional — same trigger as
+ * onSelect but passes the full partner row (so callers needing
+ * min_interest_rate/max_tenure, not just the key, don't have to re-fetch).
+ * Existing callers that don't pass this are entirely unaffected.
  */
-export default function PartnerTiles({ type, onSelect, onWhatsAppInterest }) {
+export default function PartnerTiles({ type, onSelect, onSelectPartner, layout = 'strip' }) {
   const [partners, setPartners] = useState(null); // null = loading, [] = none/hidden
   const [selectedKey, setSelectedKey] = useState(null);
   const [detailIdx, setDetailIdx] = useState(null);
-  const [waPopupPartner, setWaPopupPartner] = useState(null); // partner awaiting a WhatsApp choice after explicit Select, or null
 
   const isLoan = type === 'loan';
   const keyField = isLoan ? 'bank_name' : 'company_name';
@@ -52,10 +62,87 @@ export default function PartnerTiles({ type, onSelect, onWhatsAppInterest }) {
   const select = useCallback((p) => {
     setSelectedKey(p[keyField]);
     onSelect(p[keyField]);
-  }, [keyField, onSelect]);
+    onSelectPartner?.(p);
+    logPartnerClick(p[keyField], type);
+  }, [keyField, onSelect, onSelectPartner, type]);
 
   if (partners === null) return <div className="bt-loading">Loading offers…</div>;
   if (partners.length === 0) return null; // no live/dummy content — hide the section entirely
+
+  if (layout === 'grid') {
+    return (
+      <div className="bank-tiles-grid">
+        {partners.map((p, idx) => {
+          const isSelected = selectedKey === p[keyField];
+          const topFeature = Array.isArray(p.top_2_features) && p.top_2_features.length ? p.top_2_features[0] : null;
+          return (
+            <button
+              key={p[keyField] || idx}
+              className={`bank-tile-grid ${isSelected ? 'is-selected' : ''}`}
+              onClick={() => {
+                track('partner_tile_click', { type, partner: p[keyField], featured: !!(isLoan ? isFeaturedNow(p) : p.featured) });
+                setDetailIdx(idx);
+              }}
+            >
+              {p.logo_url && <div className="btg-logo"><img src={p.logo_url} alt={p[keyField] || ''} /></div>}
+              {isLoan && p.min_interest_rate != null && (
+                <div className="btg-stat"><span className="btg-stat-value">{p.min_interest_rate}%</span><span className="btg-stat-label">p.a. min rate</span></div>
+              )}
+              {isLoan && p.max_tenure != null && (
+                <div className="btg-stat"><span className="btg-stat-value">{p.max_tenure}yr</span><span className="btg-stat-label">max tenure</span></div>
+              )}
+              {!isLoan && topFeature && (
+                <div className="btg-feature">{topFeature}</div>
+              )}
+            </button>
+          );
+        })}
+
+        {detailIdx != null && partners[detailIdx] && (
+          <PartnerDetailPopup
+            partner={partners[detailIdx]}
+            isLoan={isLoan}
+            keyField={keyField}
+            isSelected={selectedKey === partners[detailIdx][keyField]}
+            onSelect={() => {
+              const p = partners[detailIdx];
+              setDetailIdx(null);
+              select(p);
+            }}
+            onClose={() => setDetailIdx(null)}
+          />
+        )}
+
+        <style>{`
+          .bank-tiles-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+          .bank-tile-grid {
+            all:unset; box-sizing:border-box; background:#fff; border:1px solid rgba(0,0,0,0.08);
+            border-radius:12px; padding:16px 12px; box-shadow:0 1px 3px rgba(0,0,0,0.07);
+            display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;
+            text-align:center; cursor:pointer; position:relative;
+            transition:box-shadow .15s ease, border-color .15s ease, transform .1s ease;
+          }
+          .bank-tile-grid:hover { box-shadow:0 2px 8px rgba(0,0,0,0.12); transform:translateY(-1px); }
+          .bank-tile-grid:active { transform:translateY(0); }
+          .bank-tile-grid.is-selected { border-color:var(--orange); box-shadow:0 0 0 2px var(--orange-light); }
+          .bank-tile-grid.is-selected::after {
+            content:"✓"; position:absolute; top:8px; right:8px;
+            background:var(--orange); color:#fff; font-size:0.55rem; font-weight:700;
+            width:16px; height:16px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+          }
+          .btg-logo {
+            width:44px; height:44px; border-radius:8px; overflow:hidden;
+            display:flex; align-items:center; justify-content:center; background:transparent; flex-shrink:0;
+          }
+          .btg-logo img { width:100%; height:100%; object-fit:contain; }
+          .btg-stat { display:flex; flex-direction:column; align-items:center; }
+          .btg-stat-value { font-size:0.9rem; font-weight:800; color:#1A1A1A; letter-spacing:-0.02em; line-height:1.2; }
+          .btg-stat-label { font-size:0.625rem; font-weight:600; color:#9A9A9A; }
+          .btg-feature { font-size:0.75rem; font-weight:600; color:#3D3D3D; line-height:1.35; }
+        `}</style>
+      </div>
+    );
+  }
 
   return (
     <div className="bank-tiles-row">
@@ -94,25 +181,9 @@ export default function PartnerTiles({ type, onSelect, onWhatsAppInterest }) {
           onSelect={() => {
             const p = partners[detailIdx];
             setDetailIdx(null);
-            if (onWhatsAppInterest) { setWaPopupPartner(p); return; }
             select(p);
           }}
           onClose={() => setDetailIdx(null)}
-        />
-      )}
-
-      {waPopupPartner && (
-        <WhatsAppInterestPopup
-          contextLabel={waPopupPartner[keyField]}
-          onSubmit={(phone) => {
-            onWhatsAppInterest(phone, waPopupPartner);
-            select(waPopupPartner);
-            setWaPopupPartner(null);
-          }}
-          onSkip={() => {
-            select(waPopupPartner);
-            setWaPopupPartner(null);
-          }}
         />
       )}
 

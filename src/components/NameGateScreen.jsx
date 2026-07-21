@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import eevyAvatar from '../assets/eevy-avatar.png';
+import eevyAvatar from '../assets/eevy-avatar.avif';
 import { track } from '../modules/analytics.js';
 
 /**

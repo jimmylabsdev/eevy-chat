@@ -1,27 +1,31 @@
 import React, { useState } from 'react';
-import WhatsAppInterestPopup from './widgets/WhatsAppInterestPopup.jsx';
+import VariantsPopup from './widgets/VariantsPopup.jsx';
 
 /**
  * item: { id, title, subtitle, image, description, specs: [{label, value}], ctaLabel }
- * Reused across vehicle detail, insurance plan detail, loan detail.
+ * Only ever used by the Browse flow.
+ *
+ * onClose: always present — closes back to chat (2026-07-19 fix: this was
+ * previously the one Detail screen with no way out other than Select
+ * this one/Check Variants; needed regardless of mode below).
+ * onSelect: present ONLY for the car-selection-gate detour (untouched,
+ * 2026-07-19) — picking a model to hand off to a pending Loan/EMI or
+ * Insurance request. Renders the original "Select this one" CTA, which
+ * now resolves immediately (WhatsApp-interest gate removed, 2026-07-19).
+ * onCalculateEmi/onCheckInsurance: present for the direct main-menu Browse
+ * entry (new, 2026-07-19) — renders "Check Variants" instead, opening the
+ * same shared VariantsPopup the Budget result screen uses. Exactly one of
+ * these two modes is ever active for a given DetailView instance; which
+ * one is decided by ChatThread's handleBrowseModelSelect().
  */
-export default function DetailView({ item, onSelect, onWhatsAppInterest }) {
-  const [waPopup, setWaPopup] = useState(false);
+export default function DetailView({ item, onClose, onSelect, onCalculateEmi, onCheckInsurance, sessionId }) {
+  const [showVariants, setShowVariants] = useState(false);
   if (!item) return null;
-
-  function handleSelect() {
-    if (onWhatsAppInterest) { setWaPopup(true); return; }
-    onSelect(item);
-  }
-
-  function resolveWhatsAppPopup(phone) {
-    setWaPopup(false);
-    if (phone) onWhatsAppInterest(phone, item);
-    onSelect(item);
-  }
 
   return (
     <div className="detail-view">
+      <button className="detail-close-btn" onClick={onClose} aria-label="Close">✕</button>
+
       {item.image && <img src={item.image} alt={item.title} className="detail-img" />}
       <h2 className="detail-title">{item.title}</h2>
       {item.subtitle && <p className="detail-subtitle">{item.subtitle}</p>}
@@ -38,22 +42,35 @@ export default function DetailView({ item, onSelect, onWhatsAppInterest }) {
         </div>
       )}
 
-      {onSelect && (
-        <button className="detail-cta" onClick={handleSelect}>
+      {onSelect ? (
+        <button className="detail-cta" onClick={() => onSelect(item)}>
           {item.ctaLabel || 'Select'}
+        </button>
+      ) : (
+        <button className="detail-cta" onClick={() => setShowVariants(true)}>
+          Check Variants
         </button>
       )}
 
-      {waPopup && (
-        <WhatsAppInterestPopup
-          contextLabel={item.title}
-          onSubmit={resolveWhatsAppPopup}
-          onSkip={() => resolveWhatsAppPopup(null)}
+      {showVariants && (
+        <VariantsPopup
+          vehicleItem={item}
+          onBack={() => setShowVariants(false)}
+          onCalculateEmi={onCalculateEmi}
+          onCheckInsurance={onCheckInsurance}
+          sessionId={sessionId}
+          flowName="browse"
         />
       )}
 
       <style>{`
-        .detail-view { padding: 4px 0; }
+        .detail-view { padding: 44px 0 4px; position:relative; }
+        .detail-close-btn {
+          position:fixed; top:78px; left:12px; z-index:10;
+          width:32px; height:32px; border-radius:50%; border:none;
+          background: rgba(0,0,0,0.45); color:#fff; font-size:0.9rem;
+          display:flex; align-items:center; justify-content:center; cursor:pointer;
+        }
         .detail-img { width:100%; border-radius: var(--radius-md); margin-bottom:14px; }
         .detail-title { margin:0 0 4px; font-size:1.25rem; color: var(--ink); }
         .detail-subtitle { margin:0 0 12px; color: var(--ink-3); font-size:0.9rem; }

@@ -92,6 +92,16 @@ export const MODULES = {
     ],
   },
 
+  // RETIRED (2026-07-19, per Ram: "lost in evolution, retire it") — no
+  // live UI path reaches this anymore. Its only two triggers were the old
+  // "Find the best EV for me" main-menu chip (removed in the 4-chip
+  // reshuffle) and the Budget result screen's "Find Top 3" button (removed
+  // alongside the WhatsApp-gate cleanup). Left in place rather than
+  // deleted: BUYING_KIT_CORE below and several ChatThread functions
+  // (ensureVehicleSelected/handleCarSelectionChoice/doQuickPick/
+  // startBuyingKitQueue/advanceBuyingKitQueue) reference it too, and a
+  // full removal needs a proper dependency trace across those — flagged
+  // for a dedicated cleanup pass rather than a blind deletion here.
   'ev-personalize': {
     id: 'ev-personalize',
     label: 'Match My Needs',
@@ -285,22 +295,26 @@ export const MODULE_ORDER = [
   'showroom',
 ];
 
-// Welcome-screen intents. "I already own an EV" intentionally
-// omitted for v1 — will plug in a separate rebuilt questionnaire later.
-// "find_budget_car" and "find_best_ev" are now two genuinely separate,
-// non-interconnecting flows (each ends on its own terminal result screen
-// with a single 'eevy' button, per the no-cross-flow-links redesign):
-//   find_budget_car -> ev-budget-list (plain list, no ticking, terminal)
-//   find_best_ev    -> ev-budget (tick 5) -> ev-personalize -> Top 3 (terminal)
+// Welcome-screen intents — pared down to 4 chips (2026-07-19 menu
+// refinement). "find_best_ev" (the tick-5 -> ev-personalize -> Top 3 chain)
+// and "buying_kit" are intentionally dropped from the menu ONLY: their
+// modules, handlers (handleBuyingKitIntent, the ev-personalize reward path,
+// etc.) are untouched and still fully wired, just unreachable from the main
+// menu for now, pending a later pass that decides where they resurface.
+// ids are kept stable (not renamed) so existing analytics (`intent_select`,
+// track() calls keyed on these ids) stay continuous across the change.
 export const ENTRY_INTENTS = [
-  { id: 'find_budget_car', label: 'Find a car for my budget', startModule: 'ev-budget-list' },
-  { id: 'find_best_ev', label: 'Find the best EV for me', startModule: 'ev-budget' },
-  { id: 'calculate_emi', label: 'Calculate my EMI', startModule: 'affordability' },
-  { id: 'suggest_insurance', label: 'Suggest insurance plans', startModule: 'insurance' },
-  { id: 'browse_all', label: 'Show all EVs', startModule: null }, // special-cased browse flow, not a graph module
-  { id: 'buying_kit', label: 'Build my Buying Kit', startModule: null }, // special-cased orchestrator, see handleBuyingKitIntent
+  { id: 'find_budget_car', label: 'Find EV by price range', startModule: 'ev-budget-list' },
+  { id: 'browse_all', label: 'All EVs in India', startModule: null }, // special-cased browse flow, not a graph module
+  { id: 'calculate_emi', label: 'EV Loan Providers', startModule: 'affordability' },
+  { id: 'suggest_insurance', label: 'EV Insurance Providers', startModule: 'insurance' },
 ];
 
+// RETIRED (2026-07-19) — Buying Kit has no main-menu chip anymore (removed
+// in the 4-chip reshuffle), so nothing calls handleBuyingKitIntent()/
+// startBuyingKitQueue() in ChatThread.jsx, which is what made this and
+// ev-personalize above unreachable together. See the note on
+// 'ev-personalize' — left in place pending a dedicated cleanup pass.
 // The three modules a Buying Kit requires before it can be built — deliberately
 // NOT the same as MODULE_ORDER (which also includes ev-budget/ev-budget-list,
 // neither of which the Kit itself needs). Checked with isModuleComplete().

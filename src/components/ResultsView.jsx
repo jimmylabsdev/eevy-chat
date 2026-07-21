@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { buildVehicleSpecs } from '../modules/vehicleSpecs.js';
-import WhatsAppInterestPopup from './widgets/WhatsAppInterestPopup.jsx';
 import ShareButton from './widgets/ShareButton.jsx';
+import VariantsPopup from './widgets/VariantsPopup.jsx';
 
 /**
  * items: [{ id, title, subtitle, price, image, tags, topPick?, _raw? }]
@@ -26,16 +26,28 @@ import ShareButton from './widgets/ShareButton.jsx';
  *               is pre-selected on mount.
  */
 export default function ResultsView({
-  title, items, onContinue, emptyLabel,
+  title, subtitle, items, onContinue, emptyLabel,
   selectionMode = 'single', maxSelect = 5,
-  onWhatsAppInterest, onFindTop3,
+  onCalculateEmi, onCheckInsurance,
+  sessionId,
 }) {
   const isMulti = selectionMode === 'multi';
   const isNone = selectionMode === 'none';
   const minSelect = isMulti ? Math.min(maxSelect, items?.length || 0) : 1;
 
   const [selectedIds, setSelectedIds] = useState(() => computeInitialSelection(items, selectionMode, maxSelect));
-  const [waPopupItem, setWaPopupItem] = useState(null); // the selected item awaiting a WhatsApp choice, or null
+  // Navigation stack for the budget-list card popups — Budget result screen
+  // (this component's own list, underneath) -> EV Details -> Variants.
+  // Back pops one entry; popping the last entry closes back to the list.
+  const [popupStack, setPopupStack] = useState([]); // [{ type: 'detail'|'variants', item }]
+  const topPopup = popupStack[popupStack.length - 1] || null;
+
+  function pushPopup(entry) {
+    setPopupStack((s) => [...s, entry]);
+  }
+  function popPopup() {
+    setPopupStack((s) => s.slice(0, -1));
+  }
 
   useEffect(() => {
     setSelectedIds(computeInitialSelection(items, selectionMode, maxSelect));
@@ -59,20 +71,7 @@ export default function ResultsView({
   function handleContinue() {
     if (isNone) { onContinue(); return; } // nothing to carry forward — this screen is terminal
     const selectedItems = (items || []).filter((i) => selectedIds.has(i.id));
-    if (!isMulti && onWhatsAppInterest && selectedItems[0]) {
-      // Single-select (Top 3) — this is the "select this EV" moment. Ask
-      // about WhatsApp before actually continuing, not instead of it.
-      setWaPopupItem(selectedItems[0]);
-      return;
-    }
     onContinue(isMulti ? selectedItems : selectedItems[0]);
-  }
-
-  function resolveWhatsAppPopup(phone) {
-    const item = waPopupItem;
-    setWaPopupItem(null);
-    if (phone && item) onWhatsAppInterest(phone, item);
-    onContinue(item);
   }
 
   const continueLabel = isMulti
@@ -88,7 +87,7 @@ export default function ResultsView({
       }).join('\n')
     : '';
 
-  const countLabel = !items?.length ? null
+  const countLabel = subtitle || !items?.length ? null
     : isMulti
       ? (items.length <= maxSelect ? `${items.length} found — all included` : `${items.length} found · pick exactly ${maxSelect}`)
       : `${items.length} found`;
@@ -99,6 +98,7 @@ export default function ResultsView({
         <h2>{title}</h2>
         {countLabel && <span className="results-count">{countLabel}</span>}
       </div>
+      {subtitle && <p className="results-subtitle">{subtitle}</p>}
 
       {(!items || items.length === 0) ? (
         <div className="results-empty">
@@ -107,7 +107,7 @@ export default function ResultsView({
       ) : isMulti ? (
         <ListLayout items={items} selectedIds={selectedIds} onToggle={toggleSelect} />
       ) : isNone ? (
-        <ListLayout items={items} selectedIds={selectedIds} onToggle={toggleSelect} selectable={false} />
+        <ListLayout items={items} selectedIds={selectedIds} onToggle={toggleSelect} selectable={false} onRowClick={(item) => setPopupStack([{ type: 'detail', item }])} />
       ) : (
         <CarouselLayout items={items} selectedIds={selectedIds} onToggle={toggleSelect} />
       )}
@@ -116,11 +116,7 @@ export default function ResultsView({
         {isTerminal ? (
           <div className="results-footer-row">
             <button className="results-continue" onClick={handleContinue}>{continueLabel}</button>
-            {onFindTop3 ? (
-              <button className="results-continue results-secondary" onClick={onFindTop3}>Find Top 3</button>
-            ) : (
-              <ShareButton title={title} text={shareText} shareKey="results" />
-            )}
+            <ShareButton title={title} text={shareText} shareKey="results" />
           </div>
         ) : (
           <button className="results-continue" disabled={continueDisabled} onClick={handleContinue}>
@@ -129,11 +125,22 @@ export default function ResultsView({
         )}
       </div>
 
-      {waPopupItem && (
-        <WhatsAppInterestPopup
-          contextLabel={waPopupItem.title}
-          onSubmit={resolveWhatsAppPopup}
-          onSkip={() => resolveWhatsAppPopup(null)}
+      {topPopup?.type === 'detail' && (
+        <VehicleDetailPopup
+          item={topPopup.item}
+          onBack={popPopup}
+          onCheckVariants={() => pushPopup({ type: 'variants', item: topPopup.item })}
+        />
+      )}
+
+      {topPopup?.type === 'variants' && (
+        <VariantsPopup
+          vehicleItem={topPopup.item}
+          onBack={popPopup}
+          onCalculateEmi={onCalculateEmi}
+          onCheckInsurance={onCheckInsurance}
+          sessionId={sessionId}
+          flowName="budget"
         />
       )}
 
@@ -156,7 +163,7 @@ function computeInitialSelection(items, selectionMode, maxSelect) {
 
 /* ---------------- List layout (multi-select budget match, and the non-selectable budget-list screen) ---------------- */
 
-function ListLayout({ items, selectedIds, onToggle, selectable = true }) {
+function ListLayout({ items, selectedIds, onToggle, selectable = true, onRowClick }) {
   return (
     <div className="results-list">
       {items.map((item) => {
@@ -181,6 +188,8 @@ function ListLayout({ items, selectedIds, onToggle, selectable = true }) {
           <div key={item.id} className={`results-row ${isSelected ? 'results-row-selected' : ''}`}>
             {selectable ? (
               <button className="results-row-tap" onClick={() => onToggle(item)}>{rowInner}</button>
+            ) : onRowClick ? (
+              <button className="results-row-tap" onClick={() => onRowClick(item)}>{rowInner}</button>
             ) : (
               <div className="results-row-tap results-row-static">{rowInner}</div>
             )}
@@ -236,6 +245,46 @@ function CarouselLayout({ items, selectedIds, onToggle }) {
   );
 }
 
+/* ---------------- Vehicle detail popup (budget-list card tap) ---------------- */
+// Strict popup: the only way out is Back (one step, to the Budget result
+// screen underneath) — no backdrop-click-to-dismiss.
+
+function VehicleDetailPopup({ item, onBack, onCheckVariants }) {
+  const specs = buildVehicleSpecs(item._raw);
+  return (
+    <div className="vd-backdrop">
+      <div className="vd-popup">
+        <button className="vd-back" onClick={onBack} aria-label="Back">←</button>
+        <div className="vd-body">
+          {item.image && <img src={item.image} alt={item.title} className="vd-img" />}
+          <h3 className="vd-title">{item.title}</h3>
+          {item.subtitle && <p className="vd-subtitle">{item.subtitle}</p>}
+          {item.price && <p className="vd-price">{item.price}</p>}
+          {item._raw?.why && <p className="vd-why">{item._raw.why}</p>}
+          {specs && specs.length > 0 && (
+            <div className="vd-specs">
+              {specs.map((s) => (
+                <div key={s.label} className="vd-spec-row">
+                  <span className="vd-spec-label">{s.label}</span>
+                  <span className="vd-spec-value">{s.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="vd-footer">
+          <button className="vd-variants-btn" onClick={onCheckVariants}>Check Variants</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Variants popup ---------------- */
+// Extracted to widgets/VariantsPopup.jsx (2026-07-19) so Browse's
+// DetailView.jsx can share the exact same component. Imported above.
+
+
 const RESULTS_STYLES = `
   .results-view {
     height: 100%; display:flex; flex-direction:column;
@@ -247,6 +296,7 @@ const RESULTS_STYLES = `
   }
   .results-header h2 { margin:0; font-size:1.15rem; color: var(--ink); }
   .results-count { font-size:0.825rem; color: var(--ink-4); }
+  .results-subtitle { margin: -8px 0 16px; font-size:0.875rem; color: var(--ink-3); }
   .results-empty {
     flex:1; display:flex; align-items:center; justify-content:center;
     color: var(--ink-4); text-align:center; padding: 0 24px;
@@ -329,4 +379,38 @@ const RESULTS_STYLES = `
     background:transparent !important; border:1.5px solid var(--rule) !important; color:var(--ink) !important;
   }
   .results-continue:disabled { opacity:0.5; cursor:default; }
+
+  /* ---- Vehicle detail popup ---- */
+  .vd-backdrop {
+    position:fixed; inset:0; z-index:20; background:rgba(0,0,0,0.55);
+    display:flex; align-items:flex-end; justify-content:center;
+  }
+  .vd-popup {
+    position:relative; width:100%; max-width:560px; max-height:88vh;
+    background: var(--bg); border-radius: 20px 20px 0 0;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  .vd-back {
+    position:absolute; top:12px; left:12px; z-index:1;
+    width:32px; height:32px; border-radius:50%; border:none;
+    background: rgba(0,0,0,0.45); color:#fff; font-size:1rem;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .vd-body { flex:1; overflow-y:auto; padding: 20px; box-sizing:border-box; }
+  .vd-img { width:100%; height:180px; object-fit:cover; border-radius: var(--radius-md); margin-bottom:14px; }
+  .vd-title { margin:0 0 4px; font-size:1.15rem; color: var(--ink); }
+  .vd-subtitle { margin:0 0 8px; color: var(--ink-3); font-size:0.875rem; }
+  .vd-price { margin:0 0 12px; font-weight:700; color: var(--orange); font-size:1rem; }
+  .vd-why { font-size:0.85rem; color: var(--ink-2); line-height:1.5; margin:0 0 16px; }
+  .vd-specs { background: var(--surface-alt); border-radius: var(--radius-md); padding: 2px 16px; }
+  .vd-spec-row { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--rule-soft); font-size:0.85rem; }
+  .vd-spec-row:last-child { border-bottom:none; }
+  .vd-spec-label { color: var(--ink-4); }
+  .vd-spec-value { color: var(--ink); font-weight:500; }
+  .vd-footer { flex-shrink:0; padding: 14px 20px 20px; border-top:1px solid var(--rule-soft); }
+  .vd-variants-btn {
+    width:100%; background: var(--brand); border:none; color:#fff;
+    border-radius: var(--radius-sm); padding: 14px; font-weight:600;
+    font-size:0.95rem; cursor:pointer;
+  }
 `;
