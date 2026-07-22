@@ -6,6 +6,15 @@
   --orange-mid: rgba(240,106,34,0.42);
   --orange-dark: #FFA36B;
   --orange-glow: rgba(240,106,34,0.22);
+  /* Selection/active-state accent (2026-07-21) — replaces --teal for this
+     purpose, per Ram's call to keep the chat app's own accent family in
+     one consistent orange tone rather than matching index.html's teal.
+     Deliberately its own shade, not a reuse of --orange/--orange-dark:
+     several of its uses are solid-filled (e.g. an active chip), and
+     reusing the same orange as primary CTA buttons there would make a
+     "this is selected" chip look identical to a "tap this" button. */
+  --amber: #C2570F;
+  --amber-light: rgba(194,87,15,0.14);
   --ink: #F5F4F2;
   --ink-2: rgba(245,244,242,0.82);
   --ink-3: rgba(245,244,242,0.60);
@@ -37,8 +46,8 @@
   --bubble-user-text: #FFFFFF;
   --chip-bg: transparent;
   --chip-border: var(--rule);
-  --chip-border-active: var(--teal);
-  --chip-text-active: var(--teal);
+  --chip-border-active: var(--amber);
+  --chip-text-active: var(--amber);
 }
 
 * { box-sizing: border-box; }
@@ -46,6 +55,7 @@
 html, body, #root {
   height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
 body {
