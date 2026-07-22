@@ -5,7 +5,7 @@ import { track } from '../modules/analytics.js';
 /**
  * Full-bleed welcome/name-gate screen — matches the reference mockup:
  * large centered avatar, a glowing-bordered message bubble (with "Eevy"
- * picked out in the accent blue), a standalone name input below the
+ * picked out in the accent orange), a standalone name input below the
  * bubble, and a full-width "Continue" button. No app header here — this
  * screen owns the whole viewport; App.jsx only shows the header once a
  * name is set and the real chat mounts.
@@ -77,17 +77,17 @@ export default function NameGateScreen({ onSubmit }) {
         }
 
         .name-gate-bubble {
-          border:1.5px solid rgba(96,165,250,0.55);
+          border:1.5px solid rgba(240,106,34,0.55);
           border-radius: 20px; padding:22px 22px;
-          background: rgba(96,165,250,0.06);
-          box-shadow: 0 0 24px rgba(96,165,250,0.18), inset 0 0 40px rgba(96,165,250,0.04);
+          background: rgba(240,106,34,0.06);
+          box-shadow: 0 0 24px rgba(240,106,34,0.18), inset 0 0 40px rgba(240,106,34,0.04);
         }
         .name-gate-bubble p {
           margin:0 0 16px; color: var(--ink-2); font-size:1.0625rem; line-height:1.5;
         }
         .name-gate-bubble p:last-child { margin-bottom:0; }
         .name-gate-bubble p:first-child { color: var(--ink); font-weight:700; font-size:1.25rem; }
-        .accent { color: var(--blue); font-weight:700; }
+        .accent { color: var(--orange); font-weight:700; }
 
         .name-gate input {
           width:100%; box-sizing:border-box; background: rgba(255,255,255,0.02);
@@ -101,11 +101,11 @@ export default function NameGateScreen({ onSubmit }) {
         }
 
         .name-gate input::placeholder { color: var(--ink-4); }
-        .name-gate input:focus { outline:none; border-color: var(--blue); }
+        .name-gate input:focus { outline:none; border-color: var(--orange); }
 
         .name-gate-continue {
           width:100%; border:none; border-radius:14px; padding:17px;
-          background: var(--blue); color:#fff; font-size:1.0625rem; font-weight:700;
+          background: var(--orange); color:#fff; font-size:1.0625rem; font-weight:700;
           cursor:pointer; box-shadow: 0 6px 24px rgba(96,165,250,0.4);
         }
         .name-gate-continue:disabled { background: var(--ink-5); box-shadow:none; cursor:default; }
