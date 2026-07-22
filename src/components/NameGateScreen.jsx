@@ -82,7 +82,10 @@ export default function NameGateScreen({ onSubmit }) {
       </div>
 
       <style>{`
-        .name-gate { height:100%; position:relative; overflow:hidden; background: #000000}
+        .name-gate { height:100%; position:relative; overflow:hidden; background: #000000; margin: 0 -20px;}
+        @media (max-width: 600px) {
+          .name-gate { margin: 0 -12px; }
+        }
         .name-gate-hero { display:block; width:100%; height:auto; }
 
         .name-gate-overlay {
