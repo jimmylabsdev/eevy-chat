@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import eevyHero from '../assets/eevy-hero.png';
+import eevyHero from '../assets/hero-img.avif';
 import { track } from '../modules/analytics.js';
 
 /**
@@ -54,7 +54,7 @@ export default function NameGateScreen({ onSubmit }) {
           <p>Hi! I'm <span className="accent">Eevy</span> 👋</p>
           <p>I'll help you find the right EV for your budget and driving needs — from battery size, range, features to charging.</p>
           <p className="name-gate-target-line">🎯 Let's find the <span className="accent">BEST EV</span> for you.</p>
-          <p>First, what should I call you?</p>
+          <p>What should I call you?</p>
         </div>
 
         <p className="name-gate-social-proof">🛡️ Trusted by <strong>500+</strong> EV buyers last month</p>
@@ -82,14 +82,14 @@ export default function NameGateScreen({ onSubmit }) {
       </div>
 
       <style>{`
-        .name-gate { height:100%; position:relative; overflow:hidden; }
+        .name-gate { height:100%; position:relative; overflow:hidden; background: #000000}
         .name-gate-hero { display:block; width:100%; height:auto; }
 
         .name-gate-overlay {
           position:absolute; left:0; right:0; bottom:0; max-height:100%;
           display:flex; flex-direction:column; gap:16px; overflow-y:auto;
           padding: 56px 20px calc(20px + env(safe-area-inset-bottom));
-          background: linear-gradient(to bottom, transparent, var(--bg) 18%);
+          background: linear-gradient(to bottom, transparent, #000000 18%);
           transform: translateY(60px); opacity:0;
           transition: transform 0.9s cubic-bezier(0.16, 1, 0.3, 1), opacity 1.1s ease-out;
         }
