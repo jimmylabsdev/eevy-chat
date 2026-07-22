@@ -33,8 +33,10 @@ export default function NameGateScreen({ onSubmit }) {
 
         <div className="name-gate-bubble">
           <p>Hi! I'm <span className="accent">Eevy</span> 👋</p>
-          <p>I can help you find the right EV and guide you with EMI, charging, insurance, and more.</p>
-          <p>Before we start, what should I call you?</p>
+          <p>Shopping for an EV but confused by battery size, range, features and charging?</p>
+          <p>Find the right one for your budget and driving needs.</p>
+          <p><strong>Let’s find the BEST EV for you.</strong></p>
+          <p>First, what should I call you?</p>
         </div>
 
         <p className="name-gate-social-proof">Trusted by 500+ EV buyers last month</p>
@@ -51,7 +53,7 @@ export default function NameGateScreen({ onSubmit }) {
         />
 
         <button className="name-gate-continue" disabled={!canSend} onClick={submit}>
-          Continue
+          Find My EV
         </button>
 
         <p className="name-gate-consent">
